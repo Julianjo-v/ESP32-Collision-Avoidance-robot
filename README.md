@@ -17,7 +17,7 @@ The ESP32 Collision Avoidance Robot is an autonomous robot designed to move arou
 - DRV8833 dual H-bridge motor driver with PWM speed control
 - ESP32 WROOM microcontroller (dual-core, 240 MHz) running all control algorithms
 - Proportional (P) speed controller for smooth, consistent motor performance
-- Step-down converter and 5V regulator providing stable logic power from a 7-12V battery pack
+- LM7805 5V regulator providing stable logic power from a 7-12V battery pack
 
 ## System Architecture
 
@@ -27,7 +27,7 @@ The ESP32 Collision Avoidance Robot is an autonomous robot designed to move arou
 | Propulsion | 2x N20 Motor + Encoder | Drives wheels; encoders provide odometry feedback |
 | Motor Driver | DRV8833 | H-bridge PWM speed and direction control for both motors |
 | Sensing | 3x VL53L0X ToF | Laser distance measurement for obstacle detection |
-| Power | 18650 Cells + Step-Down | 7-12V supply regulated to logic level; direct VM to motors |
+| Power | 2x 18650 Cells + LM7805 | 7-12V battery feeds the motors directly (VM); LM7805 regulates 5V into the ESP32 VIN |
 
 ## Repository Contents
 
@@ -101,44 +101,43 @@ Press the off switch to turn the robot off.
 
 ### Power connections
 
-- 2x 18650 Li-ion batteries (+) → DRV8833 (VM)
-- 2x 18650 Li-ion batteries (-) → DRV8833 (GND)
-
-### Voltage regulator (LM7805)
-
-- DRV8833 (VM) → LM7805 (Input)
-- DRV8833 (GND) → LM7805 (GND)
+- Battery (+) → DRV8833 (VM)
+- Battery (+) → LM7805 (Input)
+- Battery (+) → Electrolytic Capacitor (+)
+- Battery (-) → Common GND
 - LM7805 (Output) → ESP32 (VIN)
 - LM7805 (Output) → Tantalum Capacitor (+)
+- ESP32 (3V3) → DRV8833 (STBY), all three ToF sensor (VIN) pins, and both encoder (VCC) pins
 
-### Common ground connections
+### Common ground
 
-- DRV8833 (GND) → ESP32 (GND)
-- DRV8833 (GND) → Electrolytic Capacitor (-)
-- DRV8833 (GND) → Tantalum Capacitor (-)
-- DRV8833 (GND) → Left Encoder N20 (GND)
-- DRV8833 (GND) → Right Encoder N20 (GND)
-- DRV8833 (GND) → Left ToF Sensor (GND)
-- DRV8833 (GND) → Center ToF Sensor (GND)
-- DRV8833 (GND) → Right ToF Sensor (GND)
+Common GND connects to:
+- ESP32 (GND)
+- DRV8833 (GND)
+- LM7805 (GND)
+- All ToF sensor (GND) pins
+- Both encoder (GND) pins
+- Both capacitor (-) pins
 
 ### Motor driver ↔ ESP32
 
-- DRV8833 (AIN1) → ESP32 (D27)
-- DRV8833 (AIN2) → ESP32 (D26)
-- DRV8833 (BIN1) → ESP32 (D32)
-- DRV8833 (BIN2) → ESP32 (D33)
-- DRV8833 (STBY) → ESP32 (3V3)
+- ESP32 (D27) → DRV8833 (AIN1)
+- ESP32 (D26) → DRV8833 (AIN2)
+- ESP32 (D32) → DRV8833 (BIN1)
+- ESP32 (D33) → DRV8833 (BIN2)
+- ESP32 (3V3) → DRV8833 (STBY)
+
+> **Note:** in the sketch, `AIN1 = 26` and `AIN2 = 27` are GPIO numbers, so the constant names are swapped relative to the physical DRV8833 pins above. The behavior is the same.
 
 ### Motor connections
 
-**Left motor**
-- DRV8833 (BO1) → Left Encoder N20 (M1)
-- DRV8833 (BO2) → Left Encoder N20 (M2)
+**Left motor (Encoder N20 #1)**
+- DRV8833 (BO1) → Motor (M1)
+- DRV8833 (BO2) → Motor (M2)
 
-**Right motor**
-- DRV8833 (AO1) → Right Encoder N20 (M1)
-- DRV8833 (AO2) → Right Encoder N20 (M2)
+**Right motor (Encoder N20 #2)**
+- DRV8833 (AO1) → Motor (M1)
+- DRV8833 (AO2) → Motor (M2)
 
 ### Encoder connections
 
@@ -155,16 +154,16 @@ Press the off switch to turn the robot off.
 ### ToF sensor connections (I2C)
 
 **Shared I2C lines**
-- ESP32 (D22) → All ToF Sensors (SCL)
 - ESP32 (D21) → All ToF Sensors (SDA)
+- ESP32 (D22) → All ToF Sensors (SCL)
 
 **XSHUT pins**
-- Left ToF Sensor (XSHUT) → ESP32 (D4)
-- Center ToF Sensor (XSHUT) → ESP32 (D2)
-- Right ToF Sensor (XSHUT) → ESP32 (D15)
+- ESP32 (D15) → Left ToF Sensor (XSHUT)
+- ESP32 (D4) → Center ToF Sensor (XSHUT)
+- ESP32 (D2) → Right ToF Sensor (XSHUT)
 
 **Power**
-- All ToF Sensors (VIN) → 3.3V
+- ESP32 (3V3) → All ToF Sensors (VIN)
 
 ## Maintenance Plan
 
@@ -198,7 +197,7 @@ Press the off switch to turn the robot off.
 | --- | --- |
 | **Symptom** | One or both motors show zero movement despite code upload and serial messages appearing. |
 | **Root cause** | VM rail not connected, motor output terminals loose, or motor driver STBY pin held low. |
-| **Fix applied** | 1. Measure VM at the screw terminal with a multimeter; it should read 7-12V. 2. Check AO1/AO2 and BO1/BO2 motor output pins are firmly in screw terminals. 3. Verify the STBY pin is tied HIGH (3.3V) and not floating. |
+| **Fix applied** | 1. Measure VM at the screw terminal with a multimeter; it should read 7-12V. 2. Check AO1/AO2 and BO1/BO2 motor output pins are firmly in screw terminals. 3. Verify the DRV8833 STBY pin is tied HIGH (3.3V) and not floating. |
 | **Result** | After confirming VM at 8.4V and tightening the AO1 terminal, the motor resumed normal operation. |
 
 ### Issue 2: ToF sensor reports timeout / zero
@@ -207,7 +206,7 @@ Press the off switch to turn the robot off.
 | --- | --- |
 | **Symptom** | Serial Monitor shows a sensor FAILED message, or distance reads as 0 mm or 8190 mm (error code). |
 | **Root cause** | XSHUT pin wired to the wrong GPIO, SDA/SCL swapped, or address collision from an incomplete initialization sequence. |
-| **Fix applied** | 1. Power off and verify XSHUT wiring. 2. Confirm SDA is on GPIO21 and SCL is on GPIO22 (not reversed). 3. Power cycle fully so all sensors reset to 0x29 before re-running initialization. |
+| **Fix applied** | 1. Power off and verify XSHUT wiring: Left → D15, Center → D4, Right → D2. 2. Confirm SDA is on GPIO21 and SCL is on GPIO22 (not reversed). 3. Power cycle fully so all sensors reset to 0x29 before re-running initialization. |
 | **Result** | Swapping the reversed SDA/SCL jumper wires resolved the issue; all three sensors initialized at their unique addresses (0x30, 0x31, 0x32). |
 
 ## Demo Video
